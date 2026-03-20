@@ -33,6 +33,8 @@ class Content(Base):
     comment_value = Column(String(10), default="")    # 高 / 中 / 低
     recommended_action = Column(String(20), default="")  # 优先跟进 / 仅观察 / 暂不处理
     comment_signal = Column(String(20), default="")      # 评论关键信号
+    source_name = Column(String(50), default="手工录入")   # 来源名称
+    source_label = Column(String(50), default="手工导入")  # 来源类型
     notes = Column(Text, default="")
     created_at = Column(DateTime, default=datetime.utcnow)
 
@@ -84,6 +86,8 @@ class ContentCreate(BaseModel):
     comment_value: str = ""
     recommended_action: str = ""
     comment_signal: str = ""
+    source_name: str = "手工录入"
+    source_label: str = "手工导入"
     notes: str = ""
 
 class ContentOut(BaseModel):
@@ -96,6 +100,8 @@ class ContentOut(BaseModel):
     comment_value: str
     recommended_action: str
     comment_signal: str
+    source_name: str
+    source_label: str
     notes: str
     created_at: datetime
     class Config:

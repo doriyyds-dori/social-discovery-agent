@@ -48,6 +48,8 @@ with st.form("add_content"):
                 "comment_value": comment_value,
                 "recommended_action": recommended_action,
                 "comment_signal": comment_signal,
+                "source_name": "手工录入",
+                "source_label": "手工导入",
                 "notes": notes,
             }
             r = requests.post(f"{API}/contents/", json=payload, timeout=5)
@@ -77,6 +79,10 @@ filter_comment_value = f2.selectbox("评论价值等级", VALUE_OPTIONS, key="fi
 filter_signal = f3.selectbox("评论关键信号", SIGNAL_OPTIONS, key="filter_signal")
 filter_action = f4.selectbox("推荐动作", ACTION_OPTIONS, key="filter_action")
 
+# Dynamic source options derived from loaded records
+source_options = [""] + sorted({c.get("source_name", "") for c in contents if c.get("source_name")})
+filter_source = st.selectbox("来源", source_options, key="filter_source")
+
 filtered = contents
 if filter_platform:
     filtered = [c for c in filtered if c.get("platform") == filter_platform]
@@ -86,6 +92,8 @@ if filter_signal:
     filtered = [c for c in filtered if c.get("comment_signal") == filter_signal]
 if filter_action:
     filtered = [c for c in filtered if c.get("recommended_action") == filter_action]
+if filter_source:
+    filtered = [c for c in filtered if c.get("source_name") == filter_source]
 
 st.caption(f"共 {len(filtered)} 条记录（总计 {len(contents)} 条）")
 
@@ -112,7 +120,19 @@ for item in filtered:
         if item.get("url"):
             st.markdown(f"🔗 [{item['url']}]({item['url']})")
         st.write(f"**平台：** {item.get('platform', '—')}")
-        st.write(f"**备注：** {item.get('notes', '—')}")
+        if item.get("source_name"):
+            st.write(f"**来源：** {item['source_name']}")
+        # Smart notes display: parse structured notes from mock imports
+        notes_raw = item.get("notes", "")
+        if notes_raw and item.get("source_label") == "模拟数据":
+            # Parse structured lines: "摘要：...", "作者：...", etc.
+            for line in notes_raw.split("\n"):
+                if "：" in line:
+                    label, _, val = line.partition("：")
+                    st.write(f"**{label}：** {val}")
+        elif notes_raw:
+            st.write(f"**备注：** {notes_raw}")
+
         if item.get("comment_signal"):
             st.write(f"**评论关键信号：** {item['comment_signal']}")
 

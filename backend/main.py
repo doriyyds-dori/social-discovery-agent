@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from backend.database import init_db
-from backend.routers import keywords, contents, tasks, settings
+from backend.routers import keywords, contents, tasks, settings, sources
 
 app = FastAPI(
     title="Social Discovery Agent API",
@@ -27,6 +27,7 @@ app.include_router(keywords.router)
 app.include_router(contents.router)
 app.include_router(tasks.router)
 app.include_router(settings.router)
+app.include_router(sources.router)
 
 
 @app.on_event("startup")

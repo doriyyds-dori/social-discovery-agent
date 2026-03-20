@@ -50,9 +50,18 @@ def _run_migrations():
     # ── contents table ────────────────────────────────────────────
     cursor.execute("PRAGMA table_info(contents)")
     content_cols = {row[1] for row in cursor.fetchall()}
-    for col in ("content_value", "comment_value", "recommended_action", "comment_signal"):
+    for col in ("content_value", "comment_value", "recommended_action", "comment_signal", "source_name", "source_label"):
         if col not in content_cols:
-            cursor.execute(f"ALTER TABLE contents ADD COLUMN {col} TEXT DEFAULT ''")
+            default = "手工录入" if col == "source_name" else ("手工导入" if col == "source_label" else "")
+            cursor.execute(f"ALTER TABLE contents ADD COLUMN {col} TEXT DEFAULT '{default}'")
+
+    # ── Fix source label for existing mock records ─────────────────
+    # Mock records imported before source_name/source_label were tracked
+    # can be identified by their placeholder URL pattern.
+    cursor.execute(
+        "UPDATE contents SET source_name = '模拟数据', source_label = '模拟数据' "
+        "WHERE url LIKE '%example.com/mock/%' AND (source_name = '手工录入' OR source_name = '' OR source_name IS NULL)"
+    )
 
     conn.commit()
     conn.close()
