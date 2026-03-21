@@ -27,7 +27,7 @@ def get_db():
 
 def init_db():
     """Create all tables defined by models, then run lightweight migrations."""
-    from backend.models import Keyword, Content, Task, Setting  # noqa: F401
+    from backend.models import Keyword, Content, Task, Setting, SyncConfig, SyncLog  # noqa: F401
     Base.metadata.create_all(bind=engine)
     _run_migrations()
 
@@ -56,12 +56,16 @@ def _run_migrations():
             cursor.execute(f"ALTER TABLE contents ADD COLUMN {col} TEXT DEFAULT '{default}'")
 
     # ── Fix source label for existing mock records ─────────────────
-    # Mock records imported before source_name/source_label were tracked
-    # can be identified by their placeholder URL pattern.
     cursor.execute(
         "UPDATE contents SET source_name = '模拟数据', source_label = '模拟数据' "
         "WHERE url LIKE '%example.com/mock/%' AND (source_name = '手工录入' OR source_name = '' OR source_name IS NULL)"
     )
+
+    # ── sync_logs table ───────────────────────────────────────────
+    cursor.execute("PRAGMA table_info(sync_logs)")
+    log_cols = {row[1] for row in cursor.fetchall()}
+    if "matched_count" not in log_cols:
+        cursor.execute("ALTER TABLE sync_logs ADD COLUMN matched_count INTEGER DEFAULT 0")
 
     conn.commit()
     conn.close()

@@ -2,13 +2,13 @@
 Tasks API router.
 """
 
-from datetime import date, datetime
+from datetime import date, datetime, timezone, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from backend.database import get_db
-from backend.models import Task, TaskCreate, TaskOut, Content
+from backend.models import Task, TaskCreate, TaskOut, Content, BatchTaskCreate, BatchTaskResult
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
 
@@ -86,7 +86,7 @@ def update_task(task_id: int, data: TaskCreate, db: Session = Depends(get_db)):
         setattr(item, key, value)
     # Auto-set completed_at when status changes to 已完成
     if data.status == "已完成" and not item.completed_at:
-        item.completed_at = datetime.now().strftime("%Y-%m-%d %H:%M")
+        item.completed_at = datetime.now(timezone(timedelta(hours=8))).strftime("%Y-%m-%d %H:%M")
     db.commit()
     db.refresh(item)
     return _task_to_out(item, db)
@@ -100,3 +100,60 @@ def delete_task(task_id: int, db: Session = Depends(get_db)):
     db.delete(item)
     db.commit()
     return {"ok": True}
+
+
+@router.post("/batch", response_model=BatchTaskResult)
+def batch_create_tasks(data: BatchTaskCreate, db: Session = Depends(get_db)):
+    """Batch-create one task per content ID; skip content IDs that already have a task."""
+    selected = len(data.content_ids)
+    created_nums: list[str] = []
+    skipped = 0
+
+    # Build a set of content_ids that already have at least one task
+    existing_content_ids = {
+        row.content_id
+        for row in db.query(Task.content_id).filter(
+            Task.content_id.in_(data.content_ids)
+        ).all()
+        if row.content_id is not None
+    }
+
+    for cid in data.content_ids:
+        if cid in existing_content_ids:
+            skipped += 1
+            continue
+
+        content = db.query(Content).get(cid)
+        if not content:
+            skipped += 1
+            continue
+
+        task_title = f"[{content.title}] {data.description[:30]}" if data.description else f"[{content.title}] 新任务"
+        task_number = _generate_task_number(db, cid)
+        task = Task(
+            content_id=cid,
+            title=task_title,
+            assignee=data.assignee,
+            due_date=data.due_date,
+            description=data.description,
+            status="待处理",
+            task_number=task_number,
+        )
+        db.add(task)
+        db.commit()
+        db.refresh(task)
+        created_nums.append(task_number)
+
+    created = len(created_nums)
+    parts = [f"选中 {selected} 条", f"成功创建 {created} 条"]
+    if skipped:
+        parts.append(f"跳过 {skipped} 条（已有任务）")
+    message = "，".join(parts) + "。"
+
+    return BatchTaskResult(
+        selected=selected,
+        created=created,
+        skipped=skipped,
+        message=message,
+        task_numbers=created_nums,
+    )

@@ -2,11 +2,16 @@
 Database models (SQLAlchemy) and API schemas (Pydantic).
 """
 
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from typing import Optional
 
+
+def _beijing_now() -> datetime:
+    """Return the current time in Beijing (UTC+8), with no tzinfo, for DB storage."""
+    return datetime.now(timezone(timedelta(hours=8))).replace(tzinfo=None)
+
 from pydantic import BaseModel
-from sqlalchemy import Column, Integer, String, DateTime, Text, ForeignKey
+from sqlalchemy import Column, Integer, String, DateTime, Text, ForeignKey, Boolean
 from backend.database import Base
 
 
@@ -18,7 +23,7 @@ class Keyword(Base):
     id = Column(Integer, primary_key=True, index=True)
     text = Column(String(255), nullable=False, unique=True)
     platform = Column(String(50), default="general")
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=_beijing_now)
 
 
 class Content(Base):
@@ -36,7 +41,7 @@ class Content(Base):
     source_name = Column(String(50), default="手工录入")   # 来源名称
     source_label = Column(String(50), default="手工导入")  # 来源类型
     notes = Column(Text, default="")
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=_beijing_now)
 
 
 class Task(Base):
@@ -51,7 +56,7 @@ class Task(Base):
     description = Column(Text, default="")
     status = Column(String(50), default="待处理")  # 待处理 / 处理中 / 已完成 / 已跳过
     completed_at = Column(String(30), default="")
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=_beijing_now)
 
 
 class Setting(Base):
@@ -132,6 +137,20 @@ class TaskOut(BaseModel):
         from_attributes = True
 
 
+class BatchTaskCreate(BaseModel):
+    content_ids: list[int]
+    assignee: str = ""
+    due_date: str = ""
+    description: str = ""
+
+class BatchTaskResult(BaseModel):
+    selected: int
+    created: int
+    skipped: int
+    message: str
+    task_numbers: list[str]
+
+
 class SettingCreate(BaseModel):
     key: str
     value: str = ""
@@ -140,5 +159,83 @@ class SettingOut(BaseModel):
     id: int
     key: str
     value: str
+    class Config:
+        from_attributes = True
+
+
+# ── Sync Config ────────────────────────────────────────────────────
+
+class SyncConfig(Base):
+    __tablename__ = "sync_configs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(255), nullable=False)
+    source = Column(String(255), default="")
+    keywords = Column(Text, default="")          # comma-separated plain text
+    enabled = Column(Boolean, default=True)
+    sync_mode = Column(String(20), default="手动")  # 手动 / 定时
+    frequency_desc = Column(Text, default="")     # free text
+    last_run_at = Column(String(30), default="")  # system-written
+    current_status = Column(String(20), default="未执行")  # system-maintained enum
+    created_at = Column(DateTime, default=_beijing_now)
+    updated_at = Column(DateTime, default=_beijing_now)
+
+
+class SyncConfigCreate(BaseModel):
+    name: str
+    source: str = ""
+    keywords: str = ""
+    enabled: bool = True
+    sync_mode: str = "手动"
+    frequency_desc: str = ""
+
+class SyncConfigOut(BaseModel):
+    id: int
+    name: str
+    source: str
+    keywords: str
+    enabled: bool
+    sync_mode: str
+    frequency_desc: str
+    last_run_at: str
+    current_status: str
+    created_at: datetime
+    updated_at: datetime
+    class Config:
+        from_attributes = True
+
+
+# ── Sync Execution Log ────────────────────────────────────────────
+
+class SyncLog(Base):
+    __tablename__ = "sync_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    sync_config_id = Column(Integer, nullable=True)   # kept even if config deleted
+    config_name = Column(String(255), default="")      # snapshot of 任务名称
+    source = Column(String(255), default="")           # snapshot of 来源
+    executed_at = Column(String(30), default="")       # Beijing time string
+    result = Column(String(10), default="")            # 成功 / 失败
+    total = Column(Integer, default=0)
+    matched_count = Column(Integer, default=0)    # 关键词过滤后剩余数量
+    imported = Column(Integer, default=0)
+    skipped = Column(Integer, default=0)
+    message = Column(Text, default="")
+    created_at = Column(DateTime, default=_beijing_now)
+
+
+class SyncLogOut(BaseModel):
+    id: int
+    sync_config_id: Optional[int]
+    config_name: str
+    source: str
+    executed_at: str
+    result: str
+    total: int
+    matched_count: int = 0
+    imported: int
+    skipped: int
+    message: str
+    created_at: datetime
     class Config:
         from_attributes = True

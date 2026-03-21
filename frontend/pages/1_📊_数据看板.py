@@ -126,6 +126,24 @@ if tasks:
         tcols = st.columns(len(present))
         for i, s in enumerate(present):
             tcols[i].metric(s, status_counts[s])
+
+    # ── 完成率 ────────────────────────────────────────────────────
+    total_tasks = len(tasks)
+    done_count = status_counts.get("已完成", 0)
+    skipped_count = status_counts.get("已跳过", 0)
+    closed_count = done_count + skipped_count
+    completion_rate = done_count / total_tasks if total_tasks else 0
+    closed_rate    = closed_count / total_tasks if total_tasks else 0
+
+    rate_col1, rate_col2 = st.columns([1, 3])
+    rate_col1.metric(
+        "🎯 任务完成率",
+        f"{completion_rate:.0%}",
+        help="已完成任务 ÷ 任务总数",
+    )
+    with rate_col2:
+        st.markdown(f"**进度：已完成 {done_count} / 总计 {total_tasks}**（含跳过共处理 {closed_count} 条，占 {closed_rate:.0%}）")
+        st.progress(completion_rate)
 else:
     st.caption("暂无任务记录。")
 

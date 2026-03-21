@@ -185,3 +185,169 @@ try:
     st.table(rows)
 except Exception as e:
     st.warning(f"无法加载来源列表：{e}")
+
+st.markdown("---")
+
+# ── Sync config management ────────────────────────────────────────
+st.subheader("🔄 来源同步任务配置")
+st.caption("管理未来真实内容同步任务的配置信息。当前状态由系统维护，暂不执行真实同步。")
+
+SYNC_MODE_OPTIONS = ["手动", "定时"]
+STATUS_BADGE = {
+    "未执行": "⬜ 未执行",
+    "空闲": "🟢 空闲",
+    "执行中": "🔵 执行中",
+    "执行失败": "🔴 执行失败",
+}
+
+# ── Create new sync config ────────────────────────────────────────
+st.markdown("##### ➕ 新建同步任务配置")
+with st.form("add_sync_config"):
+    sc_name = st.text_input("任务名称", placeholder="例：小红书-试驾咨询监控")
+    sc_source = st.text_input("来源", placeholder="例：小红书、抖音")
+    sc_keywords = st.text_input("关键词（逗号分隔）", placeholder="例：试驾,价格咨询,落地价")
+    sc_col1, sc_col2 = st.columns(2)
+    sc_mode = sc_col1.selectbox("同步方式", SYNC_MODE_OPTIONS)
+    sc_enabled = sc_col2.checkbox("是否启用", value=True)
+    sc_freq = st.text_input("同步频率说明", placeholder="例：每天上午 9 点 / 手动触发为主")
+    sc_submit = st.form_submit_button("✅ 创建配置")
+    if sc_submit:
+        if not sc_name:
+            st.error("任务名称不能为空")
+        else:
+            try:
+                payload = {
+                    "name": sc_name,
+                    "source": sc_source,
+                    "keywords": sc_keywords,
+                    "enabled": sc_enabled,
+                    "sync_mode": sc_mode,
+                    "frequency_desc": sc_freq,
+                }
+                r = requests.post(f"{API}/sync-configs/", json=payload, timeout=5)
+                if r.status_code == 200:
+                    st.success(f"配置已创建：{sc_name}")
+                    st.rerun()
+                else:
+                    st.error(r.json().get("detail", "创建失败"))
+            except Exception as e:
+                st.error(f"无法连接 API：{e}")
+
+st.markdown("---")
+
+# ── List sync configs ─────────────────────────────────────────────
+st.markdown("##### 📋 当前同步任务配置列表")
+try:
+    sync_configs = requests.get(f"{API}/sync-configs/", timeout=5).json()
+except Exception:
+    sync_configs = []
+    st.warning("无法加载同步任务配置。请确认后端是否正在运行。")
+
+if not sync_configs:
+    st.caption("暂无配置，请在上方新建。")
+else:
+    for cfg in sync_configs:
+        cfg_id = cfg["id"]
+        enabled_label = "✅ 已启用" if cfg["enabled"] else "⛔ 已停用"
+        status_label = STATUS_BADGE.get(cfg.get("current_status", ""), cfg.get("current_status", "—"))
+
+        with st.expander(f"{enabled_label}  {cfg['name']}  [{status_label}]"):
+            info_col, action_col = st.columns([5, 2])
+
+            with info_col:
+                st.write(f"**来源：** {cfg.get('source') or '—'}")
+                st.write(f"**关键词：** {cfg.get('keywords') or '—'}")
+                st.write(f"**同步方式：** {cfg.get('sync_mode', '—')}")
+                st.write(f"**同步频率说明：** {cfg.get('frequency_desc') or '—'}")
+                st.write(f"**当前状态：** {status_label}（系统维护）")
+                st.write(f"**上次执行：** {cfg.get('last_run_at') or '从未执行'}")
+                created = cfg.get("created_at", "")[:19].replace("T", " ") if cfg.get("created_at") else "—"
+                updated = cfg.get("updated_at", "")[:19].replace("T", " ") if cfg.get("updated_at") else "—"
+                st.write(f"**创建时间：** {created}")
+                st.write(f"**更新时间：** {updated}")
+
+            with action_col:
+                toggle_label = "⛔ 停用" if cfg["enabled"] else "✅ 启用"
+                if st.button(toggle_label, key=f"toggle_sc_{cfg_id}"):
+                    try:
+                        r = requests.patch(f"{API}/sync-configs/{cfg_id}/toggle", timeout=5)
+                        if r.status_code == 200:
+                            st.rerun()
+                        else:
+                            st.error("切换失败")
+                    except Exception as e:
+                        st.error(f"无法连接 API：{e}")
+
+                if st.button("▶️ 立即执行", key=f"exec_sc_{cfg_id}", type="primary"):
+                    with st.spinner("正在执行…"):
+                        try:
+                            r = requests.post(f"{API}/sync-configs/{cfg_id}/execute", timeout=30)
+                            if r.status_code == 200:
+                                res = r.json()
+                                st.session_state[f"exec_result_{cfg_id}"] = res
+                                st.rerun()
+                            else:
+                                detail = r.json().get("detail", "执行失败")
+                                st.error(f"❌ {detail}")
+                        except Exception as e:
+                            st.error(f"无法连接 API：{e}")
+
+                if st.button("🗑️ 删除", key=f"del_sc_{cfg_id}"):
+                    try:
+                        requests.delete(f"{API}/sync-configs/{cfg_id}", timeout=5)
+                        st.session_state.pop(f"exec_result_{cfg_id}", None)
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"无法连接 API：{e}")
+
+            # Show execution result below if available
+            exec_result = st.session_state.get(f"exec_result_{cfg_id}")
+            if exec_result:
+                imported = exec_result.get("imported", 0)
+                if imported > 0:
+                    st.success(f"✅ {exec_result.get('message', '')}")
+                else:
+                    st.info(f"ℹ️ {exec_result.get('message', '')}")
+                r1, r2, r3, r4 = st.columns(4)
+                r1.metric("总数", exec_result.get("total", 0))
+                r2.metric("关键词匹配", exec_result.get("matched_count", exec_result.get("total", 0)))
+                r3.metric("成功导入", exec_result.get("imported", 0))
+                r4.metric("跳过", exec_result.get("skipped", 0))
+                if st.button("清除结果", key=f"clear_exec_{cfg_id}"):
+                    st.session_state.pop(f"exec_result_{cfg_id}", None)
+                    st.rerun()
+
+
+st.markdown("---")
+
+# ── Sync execution log ────────────────────────────────────────────
+st.subheader("📋 同步执行记录")
+st.caption("每次点击「立即执行」后自动写入一条记录，最新的排在最前。")
+
+try:
+    logs = requests.get(f"{API}/sync-configs/logs", timeout=5).json()
+except Exception:
+    logs = []
+    st.warning("无法加载执行记录。请确认后端是否正在运行。")
+
+if not logs:
+    st.caption("暂无执行记录。")
+else:
+    RESULT_ICON = {"成功": "✅ 成功", "失败": "❌ 失败"}
+    rows = [
+        {
+            "任务名称": log.get("config_name", "—"),
+            "来源": log.get("source", "—"),
+            "执行时间": log.get("executed_at", "—"),
+            "执行结果": RESULT_ICON.get(log.get("result", ""), log.get("result", "—")),
+            "总数": log.get("total", 0),
+            "关键词匹配": log.get("matched_count", log.get("total", 0)),
+            "成功导入": log.get("imported", 0),
+            "跳过": log.get("skipped", 0),
+            "提示信息": log.get("message", "—"),
+        }
+        for log in logs
+    ]
+    st.dataframe(rows, use_container_width=True)
+
+

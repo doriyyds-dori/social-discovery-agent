@@ -14,7 +14,7 @@ st.title("🔑 关键词")
 st.subheader("添加关键词")
 with st.form("add_keyword"):
     text = st.text_input("关键词")
-    platform = st.selectbox("平台", ["general", "twitter", "reddit", "linkedin", "other"])
+    platform = st.selectbox("平台", ["通用", "小红书", "抖音", "微博", "知乎", "其他"])
     submitted = st.form_submit_button("添加")
     if submitted and text:
         try:

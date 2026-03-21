@@ -115,115 +115,214 @@ filtered.sort(key=lambda c: (
     _VALUE_ORDER.get(c.get("comment_value", ""), 3),
 ))
 
-for item in filtered:
-    with st.expander(f"{item['title']}  [{STATUS_LABELS.get(item['status'], item['status'])}]"):
-        if item.get("url"):
-            st.markdown(f"🔗 [{item['url']}]({item['url']})")
-        st.write(f"**平台：** {item.get('platform', '—')}")
-        if item.get("source_name"):
-            st.write(f"**来源：** {item['source_name']}")
-        # Smart notes display: parse structured notes from mock imports
-        notes_raw = item.get("notes", "")
-        if notes_raw and item.get("source_label") == "模拟数据":
-            # Parse structured lines: "摘要：...", "作者：...", etc.
-            for line in notes_raw.split("\n"):
-                if "：" in line:
-                    label, _, val = line.partition("：")
-                    st.write(f"**{label}：** {val}")
-        elif notes_raw:
-            st.write(f"**备注：** {notes_raw}")
+st.markdown("---")
 
-        if item.get("comment_signal"):
-            st.write(f"**评论关键信号：** {item['comment_signal']}")
+# ── Batch selection area ──────────────────────────────────────────
+st.markdown("##### ☑️ 批量操作")
 
-        # ── Inline edit for evaluation fields ─────────────────
-        st.markdown("##### 评估信息")
-        with st.form(key=f"edit_content_{item['id']}"):
-            ec1, ec2, ec3 = st.columns(3)
-            cur_cv = item.get("content_value") or ""
-            cur_cmv = item.get("comment_value") or ""
-            cur_ra = item.get("recommended_action") or ""
+# Initialize selection state
+if "batch_selected_ids" not in st.session_state:
+    st.session_state["batch_selected_ids"] = set()
+if "show_batch_form" not in st.session_state:
+    st.session_state["show_batch_form"] = False
 
-            new_cv = ec1.selectbox(
-                "内容价值等级",
-                VALUE_OPTIONS,
-                index=VALUE_OPTIONS.index(cur_cv) if cur_cv in VALUE_OPTIONS else 0,
-                key=f"cv_{item['id']}",
-            )
-            new_cmv = ec2.selectbox(
-                "评论价值等级",
-                VALUE_OPTIONS,
-                index=VALUE_OPTIONS.index(cur_cmv) if cur_cmv in VALUE_OPTIONS else 0,
-                key=f"cmv_{item['id']}",
-            )
-            new_ra = ec3.selectbox(
-                "推荐动作",
-                ACTION_OPTIONS,
-                index=ACTION_OPTIONS.index(cur_ra) if cur_ra in ACTION_OPTIONS else 0,
-                key=f"ra_{item['id']}",
-            )
+filtered_ids = [item["id"] for item in filtered]
 
-            cur_cs = item.get("comment_signal") or ""
-            new_cs = st.selectbox(
-                "评论关键信号",
-                SIGNAL_OPTIONS,
-                index=SIGNAL_OPTIONS.index(cur_cs) if cur_cs in SIGNAL_OPTIONS else 0,
-                key=f"cs_{item['id']}",
-            )
+sel_col1, sel_col2, sel_col3 = st.columns([2, 2, 6])
+if sel_col1.button("全选当前列表"):
+    st.session_state["batch_selected_ids"] = set(filtered_ids)
+    st.rerun()
+if sel_col2.button("取消全选"):
+    st.session_state["batch_selected_ids"] = set()
+    st.session_state["show_batch_form"] = False
+    st.rerun()
 
-            btn_col1, btn_col2 = st.columns([1, 1])
-            save_clicked = btn_col1.form_submit_button("💾 保存评估")
-            if save_clicked:
-                update_payload = {
-                    "title": item["title"],
-                    "url": item.get("url", ""),
-                    "platform": item.get("platform", ""),
-                    "status": item.get("status", "new"),
-                    "content_value": new_cv,
-                    "comment_value": new_cmv,
-                    "recommended_action": new_ra,
-                    "comment_signal": new_cs,
-                    "notes": item.get("notes", ""),
-                }
-                try:
-                    r = requests.put(f"{API}/contents/{item['id']}", json=update_payload, timeout=5)
-                    if r.status_code == 200:
-                        st.success("评估已更新！")
-                        st.rerun()
-                    else:
-                        st.error(r.json().get("detail", "更新失败"))
-                except Exception as e:
-                    st.error(f"无法连接 API：{e}")
+selected_ids: set = st.session_state["batch_selected_ids"]
+# Keep only ids that are still in the current filtered list
+selected_ids &= set(filtered_ids)
+st.session_state["batch_selected_ids"] = selected_ids
 
-        # ── One-click task creation ──────────────────────────────
-        st.markdown("##### ✅ 一键创建任务")
-        with st.form(key=f"quick_task_{item['id']}"):
-            qt_assignee = st.text_input("负责人", key=f"qt_assignee_{item['id']}")
-            qt_due = st.date_input("截止时间", value=date.today(), key=f"qt_due_{item['id']}")
-            qt_desc = st.text_area("任务说明", key=f"qt_desc_{item['id']}")
-            qt_submit = st.form_submit_button("✅ 创建任务")
-            if qt_submit:
-                task_title = f"[{item['title']}] {qt_desc[:30]}" if qt_desc else f"[{item['title']}] 新任务"
-                task_payload = {
-                    "content_id": item["id"],
-                    "title": task_title,
-                    "assignee": qt_assignee,
-                    "due_date": str(qt_due),
-                    "description": qt_desc,
-                    "status": "待处理",
-                }
-                try:
-                    r = requests.post(f"{API}/tasks/", json=task_payload, timeout=5)
-                    if r.status_code == 200:
-                        task_num = r.json().get("task_number", "")
-                        st.success(f"任务已创建！编号：{task_num}")
-                        st.rerun()
-                    else:
-                        st.error(r.json().get("detail", "创建失败"))
-                except Exception as e:
-                    st.error(f"无法连接 API：{e}")
+n_selected = len(selected_ids)
 
-        if st.button("🗑️ 删除", key=f"del_content_{item['id']}"):
-            requests.delete(f"{API}/contents/{item['id']}", timeout=5)
+if n_selected > 0:
+    st.info(f"已选 **{n_selected}** 条记录")
+    if st.button("📋 批量创建任务", type="primary"):
+        st.session_state["show_batch_form"] = True
+
+    if st.session_state.get("show_batch_form"):
+        st.markdown("##### 📝 批量创建任务 — 共享字段")
+        # 取消按钮放在 form 外面，避免 Streamlit 将其当作表单提交触发
+        if st.button("✖ 取消", key="cancel_batch"):
+            st.session_state["show_batch_form"] = False
             st.rerun()
 
+        with st.form("batch_task_form"):
+            bt_assignee = st.text_input("负责人")
+            bt_due = st.date_input("截止时间", value=date.today())
+            bt_desc = st.text_area("任务说明")
+            bt_submit = st.form_submit_button("✅ 确认批量创建")
+
+            if bt_submit:
+                payload = {
+                    "content_ids": list(selected_ids),
+                    "assignee": bt_assignee,
+                    "due_date": str(bt_due),
+                    "description": bt_desc,
+                }
+                try:
+                    r = requests.post(f"{API}/tasks/batch", json=payload, timeout=10)
+                    if r.status_code == 200:
+                        result = r.json()
+                        msg = result.get("message", "")
+                        created = result.get("created", 0)
+                        nums = result.get("task_numbers", [])
+
+                        if created > 0:
+                            st.success(f"✅ {msg}")
+                            if nums:
+                                st.write("**已创建任务编号：**")
+                                for n in nums:
+                                    st.write(f"- {n}")
+                        else:
+                            st.warning(f"⚠️ {msg}")
+
+                        # Reset selection and form
+                        st.session_state["batch_selected_ids"] = set()
+                        st.session_state["show_batch_form"] = False
+                        st.rerun()
+                    else:
+                        st.error(r.json().get("detail", "批量创建失败"))
+                except Exception as e:
+                    st.error(f"无法连接 API：{e}")
+else:
+    st.caption("在下方记录中勾选内容后，此处将显示批量操作按钮。")
+
+st.markdown("---")
+
+# ── Content list (with per-item checkboxes) ───────────────────────
+for item in filtered:
+    item_id = item["id"]
+    is_selected = item_id in st.session_state["batch_selected_ids"]
+
+    # Checkbox + expander header in same row
+    cb_col, exp_col = st.columns([1, 20])
+    with cb_col:
+        checked = st.checkbox("选", value=is_selected, key=f"sel_{item_id}", label_visibility="collapsed")
+        if checked and item_id not in st.session_state["batch_selected_ids"]:
+            st.session_state["batch_selected_ids"].add(item_id)
+            st.rerun()
+        elif not checked and item_id in st.session_state["batch_selected_ids"]:
+            st.session_state["batch_selected_ids"].discard(item_id)
+            st.rerun()
+
+    with exp_col:
+        with st.expander(f"{item['title']}  [{STATUS_LABELS.get(item['status'], item['status'])}]"):
+            if item.get("url"):
+                st.markdown(f"🔗 [{item['url']}]({item['url']})")
+            st.write(f"**平台：** {item.get('platform', '—')}")
+            if item.get("source_name"):
+                st.write(f"**来源：** {item['source_name']}")
+            # Smart notes display: parse structured notes from mock imports
+            notes_raw = item.get("notes", "")
+            if notes_raw and item.get("source_label") == "模拟数据":
+                # Parse structured lines: "摘要：...", "作者：...", etc.
+                for line in notes_raw.split("\n"):
+                    if "：" in line:
+                        label, _, val = line.partition("：")
+                        st.write(f"**{label}：** {val}")
+            elif notes_raw:
+                st.write(f"**备注：** {notes_raw}")
+
+            if item.get("comment_signal"):
+                st.write(f"**评论关键信号：** {item['comment_signal']}")
+
+            # ── Inline edit for evaluation fields ─────────────────
+            st.markdown("##### 评估信息")
+            with st.form(key=f"edit_content_{item_id}"):
+                ec1, ec2, ec3 = st.columns(3)
+                cur_cv = item.get("content_value") or ""
+                cur_cmv = item.get("comment_value") or ""
+                cur_ra = item.get("recommended_action") or ""
+
+                new_cv = ec1.selectbox(
+                    "内容价值等级",
+                    VALUE_OPTIONS,
+                    index=VALUE_OPTIONS.index(cur_cv) if cur_cv in VALUE_OPTIONS else 0,
+                    key=f"cv_{item_id}",
+                )
+                new_cmv = ec2.selectbox(
+                    "评论价值等级",
+                    VALUE_OPTIONS,
+                    index=VALUE_OPTIONS.index(cur_cmv) if cur_cmv in VALUE_OPTIONS else 0,
+                    key=f"cmv_{item_id}",
+                )
+                new_ra = ec3.selectbox(
+                    "推荐动作",
+                    ACTION_OPTIONS,
+                    index=ACTION_OPTIONS.index(cur_ra) if cur_ra in ACTION_OPTIONS else 0,
+                    key=f"ra_{item_id}",
+                )
+
+                cur_cs = item.get("comment_signal") or ""
+                new_cs = st.selectbox(
+                    "评论关键信号",
+                    SIGNAL_OPTIONS,
+                    index=SIGNAL_OPTIONS.index(cur_cs) if cur_cs in SIGNAL_OPTIONS else 0,
+                    key=f"cs_{item_id}",
+                )
+
+                btn_col1, btn_col2 = st.columns([1, 1])
+                save_clicked = btn_col1.form_submit_button("💾 保存评估")
+                if save_clicked:
+                    update_payload = {
+                        "title": item["title"],
+                        "url": item.get("url", ""),
+                        "platform": item.get("platform", ""),
+                        "status": item.get("status", "new"),
+                        "content_value": new_cv,
+                        "comment_value": new_cmv,
+                        "recommended_action": new_ra,
+                        "comment_signal": new_cs,
+                        "notes": item.get("notes", ""),
+                    }
+                    try:
+                        r = requests.put(f"{API}/contents/{item_id}", json=update_payload, timeout=5)
+                        if r.status_code == 200:
+                            st.success("评估已更新！")
+                            st.rerun()
+                        else:
+                            st.error(r.json().get("detail", "更新失败"))
+                    except Exception as e:
+                        st.error(f"无法连接 API：{e}")
+
+            # ── One-click task creation ──────────────────────────────
+            st.markdown("##### ✅ 一键创建任务")
+            with st.form(key=f"quick_task_{item_id}"):
+                qt_assignee = st.text_input("负责人", key=f"qt_assignee_{item_id}")
+                qt_due = st.date_input("截止时间", value=date.today(), key=f"qt_due_{item_id}")
+                qt_desc = st.text_area("任务说明", key=f"qt_desc_{item_id}")
+                qt_submit = st.form_submit_button("✅ 创建任务")
+                if qt_submit:
+                    task_title = f"[{item['title']}] {qt_desc[:30]}" if qt_desc else f"[{item['title']}] 新任务"
+                    task_payload = {
+                        "content_id": item_id,
+                        "title": task_title,
+                        "assignee": qt_assignee,
+                        "due_date": str(qt_due),
+                        "description": qt_desc,
+                        "status": "待处理",
+                    }
+                    try:
+                        r = requests.post(f"{API}/tasks/", json=task_payload, timeout=5)
+                        if r.status_code == 200:
+                            task_num = r.json().get("task_number", "")
+                            st.success(f"任务已创建！编号：{task_num}")
+                            st.rerun()
+                        else:
+                            st.error(r.json().get("detail", "创建失败"))
+                    except Exception as e:
+                        st.error(f"无法连接 API：{e}")
+
+            if st.button("🗑️ 删除", key=f"del_content_{item_id}"):
+                requests.delete(f"{API}/contents/{item_id}", timeout=5)
+                st.rerun()
