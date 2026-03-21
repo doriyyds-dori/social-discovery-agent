@@ -172,7 +172,10 @@ st.caption("当前已注册的内容来源及其接入状态。")
 try:
     sources = requests.get(f"{API}/sources/", timeout=5).json()
     STATUS_CN = {"active": "🟢 已接入", "planned": "📋 规划中"}
-    TYPE_CN = {"mock": "模拟数据", "manual": "手工导入", "authorized": "授权来源", "third_party": "第三方监测"}
+    TYPE_CN = {
+        "mock": "模拟数据", "douyin_keyword": "抖音关键词搜索",
+        "manual": "手工导入", "authorized": "授权来源", "third_party": "第三方监测",
+    }
     rows = [
         {
             "名称": s.get("name", "—"),
@@ -201,10 +204,17 @@ STATUS_BADGE = {
 }
 
 # ── Create new sync config ────────────────────────────────────────
+# Fetch available source names from registry API for the selectbox
+try:
+    _source_registry = requests.get(f"{API}/sources/", timeout=5).json()
+    _SOURCE_OPTIONS = [s["name"] for s in _source_registry if s.get("name")]
+except Exception:
+    _SOURCE_OPTIONS = ["模拟数据", "抖音关键词搜索"]  # 回退默认值
+
 st.markdown("##### ➕ 新建同步任务配置")
 with st.form("add_sync_config"):
     sc_name = st.text_input("任务名称", placeholder="例：小红书-试驾咨询监控")
-    sc_source = st.text_input("来源", placeholder="例：小红书、抖音")
+    sc_source = st.selectbox("来源", options=_SOURCE_OPTIONS)
     sc_keywords = st.text_input("关键词（逗号分隔）", placeholder="例：试驾,价格咨询,落地价")
     sc_col1, sc_col2 = st.columns(2)
     sc_mode = sc_col1.selectbox("同步方式", SYNC_MODE_OPTIONS)
@@ -333,7 +343,7 @@ except Exception:
 if not logs:
     st.caption("暂无执行记录。")
 else:
-    RESULT_ICON = {"成功": "✅ 成功", "失败": "❌ 失败"}
+    RESULT_ICON = {"成功": "✅ 成功", "失败": "❌ 失败", "待接入": "⏳ 待接入"}
     rows = [
         {
             "任务名称": log.get("config_name", "—"),

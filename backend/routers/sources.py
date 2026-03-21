@@ -104,6 +104,7 @@ def list_sources():
     """
     return [
         {"name": "模拟数据", "source_type": "mock", "status": "active", "endpoint": "/sources/mock"},
+        {"name": "抖音关键词搜索", "source_type": "douyin_keyword", "status": "planned", "endpoint": None},
         {"name": "手工导入", "source_type": "manual", "status": "planned", "endpoint": None},
         {"name": "授权来源", "source_type": "authorized", "status": "planned", "endpoint": None},
         {"name": "第三方监测", "source_type": "third_party", "status": "planned", "endpoint": None},

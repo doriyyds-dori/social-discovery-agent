@@ -77,8 +77,9 @@ def delete_sync_config(config_id: int, db: Session = Depends(get_db)):
     return {"ok": True}
 
 
-# ── Supported sources (mock) ────────────────────────────────────────────────
+# ── Supported sources ───────────────────────────────────────────────────────
 _MOCK_SOURCE_NAMES = {"模拟数据", "mock", "模拟", "MockContentSource"}
+_DOUYIN_SOURCE_NAMES = {"抖音关键词搜索"}
 
 
 def _run_mock_import(db: Session, keywords_raw: str = "") -> dict:
@@ -186,27 +187,39 @@ def execute_sync_config(config_id: int, db: Session = Depends(get_db)):
         source_name = (item.source or "").strip()
         if source_name in _MOCK_SOURCE_NAMES:
             result = _run_mock_import(db, keywords_raw=item.keywords or "")
+            log_result = "成功"
+        elif source_name in _DOUYIN_SOURCE_NAMES:
+            result = {
+                "total": 0,
+                "matched_count": 0,
+                "imported": 0,
+                "skipped": 0,
+                "message": "当前来源「抖音关键词搜索」暂未接入真实执行逻辑，请后续配置抖音关键词搜索接口。",
+            }
+            log_result = "待接入"
         else:
             result = {
                 "total": 0,
+                "matched_count": 0,
                 "imported": 0,
                 "skipped": 0,
-                "message": f"来源「{source_name}」暂不支持自动执行，请检查来源名称。",
+                "message": f"来源「{source_name}」暂不支持自动执行，请检查来源名称或等待后续接入。",
             }
+            log_result = "失败"
 
-        # Success — update config
+        # Update config status
         item.current_status = "空闲"
         item.last_run_at = executed_at
         item.updated_at = _beijing_now()
         db.commit()
 
-        # Write success log
+        # Write execution log
         log = SyncLog(
             sync_config_id=config_id,
             config_name=item.name,
             source=item.source or "",
             executed_at=executed_at,
-            result="成功",
+            result=log_result,
             total=result["total"],
             matched_count=result.get("matched_count", result["total"]),
             imported=result["imported"],

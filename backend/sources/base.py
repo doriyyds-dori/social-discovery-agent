@@ -6,10 +6,11 @@ SourceRecord objects. This allows future sources (API-based, RSS, scraper,
 manual import) to be swapped in without changing downstream code.
 
 Supported source types (for documentation purposes):
-- manual    手工导入
-- authorized 授权来源
-- third_party 第三方监测
-- mock       模拟数据
+- manual          手工导入
+- authorized      授权来源
+- third_party     第三方监测
+- mock            模拟数据
+- douyin_keyword  抖音关键词搜索
 """
 
 from __future__ import annotations
