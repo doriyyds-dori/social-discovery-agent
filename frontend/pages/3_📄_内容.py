@@ -222,16 +222,17 @@ for item in filtered:
             st.write(f"**平台：** {item.get('platform', '—')}")
             if item.get("source_name"):
                 st.write(f"**来源：** {item['source_name']}")
-            # Smart notes display: parse structured notes from mock imports
-            notes_raw = item.get("notes", "")
-            if notes_raw and item.get("source_label") == "模拟数据":
-                # Parse structured lines: "摘要：...", "作者：...", etc.
-                for line in notes_raw.split("\n"):
-                    if "：" in line:
-                        label, _, val = line.partition("：")
-                        st.write(f"**{label}：** {val}")
-            elif notes_raw:
-                st.write(f"**备注：** {notes_raw}")
+            if item.get("author"):
+                st.write(f"**作者：** {item['author']}")
+            if item.get("published_at"):
+                st.write(f"**发布时间：** {item['published_at']}")
+            if item.get("summary"):
+                st.write(f"**摘要：** {item['summary']}")
+            if item.get("raw_text"):
+                with st.expander("📝 原始文本"):
+                    st.write(item["raw_text"])
+            if item.get("notes"):
+                st.write(f"**备注：** {item['notes']}")
 
             if item.get("comment_signal"):
                 st.write(f"**评论关键信号：** {item['comment_signal']}")

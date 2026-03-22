@@ -4,6 +4,7 @@ Settings page.
 
 import streamlit as st
 import requests
+import json
 
 API = "http://localhost:8000"
 
@@ -49,6 +50,121 @@ if settings:
             st.rerun()
 else:
     st.caption("暂无配置项。")
+
+st.markdown("---")
+
+# ── LLM Config ────────────────────────────────────────────────────
+st.subheader("🤖 大模型配置")
+st.caption("配置和管理大模型 API，用于评论生成等场景。测试连接前请先安装对应 SDK（pip install openai / anthropic）。")
+
+# Fetch provider metadata
+try:
+    _prov_meta = requests.get(f"{API}/llm-configs/providers", timeout=5).json()
+    _PROVIDERS = _prov_meta.get("providers", [])
+    _PROTOCOLS = _prov_meta.get("protocols", [])
+    _DEFAULT_URLS = _prov_meta.get("default_base_urls", {})
+except Exception:
+    _PROVIDERS = ["OpenAI", "Gemini", "Claude", "千问", "DeepSeek", "豆包", "自定义兼容接口"]
+    _PROTOCOLS = ["openai_compatible", "native"]
+    _DEFAULT_URLS = {}
+
+_PROT_DEFAULTS = {
+    "OpenAI": "openai_compatible", "Gemini": "openai_compatible",
+    "Claude": "native", "千问": "openai_compatible",
+    "DeepSeek": "openai_compatible", "豆包": "openai_compatible",
+    "自定义兼容接口": "openai_compatible",
+}
+_PURPOSES = ["评论生成", "备用", "测试"]
+_PROT_LABELS = {"openai_compatible": "OpenAI 兼容", "native": "原生 SDK"}
+
+# -- Add new config --
+st.markdown("##### ➕ 新增大模型配置")
+llm_provider = st.selectbox("服务商", _PROVIDERS, key="llm_add_provider")
+default_prot = _PROT_DEFAULTS.get(llm_provider, "openai_compatible")
+default_url = _DEFAULT_URLS.get(llm_provider, "")
+
+with st.form("add_llm_config"):
+    llm_model = st.text_input("模型名称", placeholder="例：gpt-4o / gemini-2.0-flash / deepseek-chat")
+    llm_key = st.text_input("API Key", type="password")
+    llm_url = st.text_input("Base URL", value=default_url, placeholder="留空则使用默认地址")
+    llm_prot = st.selectbox("接入方式", _PROTOCOLS, index=_PROTOCOLS.index(default_prot) if default_prot in _PROTOCOLS else 0,
+                            format_func=lambda x: _PROT_LABELS.get(x, x))
+    lc1, lc2, lc3 = st.columns(3)
+    llm_enabled = lc1.checkbox("启用", value=True)
+    llm_default = lc2.checkbox("设为默认（评论生成）", value=False)
+    llm_purpose = lc3.selectbox("用途", _PURPOSES)
+    llm_notes = st.text_input("备注", placeholder="可选，例：公司正式账号")
+    if st.form_submit_button("✅ 保存配置"):
+        if not llm_model.strip():
+            st.error("模型名称不能为空")
+        elif not llm_key.strip():
+            st.error("API Key 不能为空")
+        else:
+            try:
+                payload = {
+                    "provider": llm_provider, "model_name": llm_model.strip(),
+                    "api_key": llm_key.strip(), "base_url": llm_url.strip(),
+                    "protocol": llm_prot, "enabled": llm_enabled,
+                    "is_default": llm_default, "purpose": llm_purpose,
+                    "notes": llm_notes.strip(),
+                }
+                r = requests.post(f"{API}/llm-configs/", json=payload, timeout=5)
+                if r.status_code == 200:
+                    st.success("配置已保存！")
+                    st.rerun()
+                else:
+                    st.error(r.json().get("detail", "保存失败"))
+            except Exception as e:
+                st.error(f"无法连接后端：{e}")
+
+# -- List existing configs --
+st.markdown("##### 📋 当前大模型配置列表")
+try:
+    llm_configs = requests.get(f"{API}/llm-configs/", timeout=5).json()
+except Exception:
+    llm_configs = []
+    st.warning("无法加载大模型配置。")
+
+if not llm_configs:
+    st.caption("暂无配置，请在上方新增。")
+else:
+    for cfg in llm_configs:
+        cfg_id = cfg["id"]
+        enabled_tag = "✅" if cfg["enabled"] else "⛔"
+        default_tag = " ⭐默认" if cfg["is_default"] else ""
+        label = f"{enabled_tag} {cfg['provider']} / {cfg['model_name']}{default_tag}  [{cfg.get('purpose', '')}]"
+
+        with st.expander(label):
+            st.write(f"**服务商：** {cfg['provider']}")
+            st.write(f"**模型名称：** {cfg['model_name']}")
+            st.write(f"**API Key：** `{cfg['api_key_masked']}`")
+            st.write(f"**Base URL：** {cfg.get('base_url') or '（默认）'}")
+            st.write(f"**接入方式：** {_PROT_LABELS.get(cfg.get('protocol', ''), cfg.get('protocol', ''))}")
+            st.write(f"**用途：** {cfg.get('purpose', '')}")
+            st.write(f"**备注：** {cfg.get('notes') or '—'}")
+
+            btn_col1, btn_col2 = st.columns(2)
+            # Test connection
+            if btn_col1.button("🔗 测试连接", key=f"test_llm_{cfg_id}"):
+                with st.spinner("正在测试连接…"):
+                    try:
+                        r = requests.post(f"{API}/llm-configs/{cfg_id}/test", timeout=30)
+                        result = r.json()
+                        if result.get("success"):
+                            st.success(result.get("message", "连接成功"))
+                        else:
+                            st.error(result.get("message", "连接失败"))
+                    except Exception as e:
+                        st.error(f"测试失败：{e}")
+
+            # Delete
+            if btn_col2.button("🗑️ 删除", key=f"del_llm_{cfg_id}"):
+                try:
+                    requests.delete(f"{API}/llm-configs/{cfg_id}", timeout=5)
+                    st.success("配置已删除！")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"删除失败：{e}")
 
 st.markdown("---")
 
@@ -212,10 +328,26 @@ except Exception:
     _SOURCE_OPTIONS = ["模拟数据", "抖音关键词搜索"]  # 回退默认值
 
 st.markdown("##### ➕ 新建同步任务配置")
+
+# Source selectbox OUTSIDE the form so changing it triggers an immediate rerun,
+# allowing conditional Douyin-specific fields to appear/disappear dynamically.
+sc_source = st.selectbox("来源", options=_SOURCE_OPTIONS, key="new_sc_source")
+
 with st.form("add_sync_config"):
     sc_name = st.text_input("任务名称", placeholder="例：小红书-试驾咨询监控")
-    sc_source = st.selectbox("来源", options=_SOURCE_OPTIONS)
-    sc_keywords = st.text_input("关键词（逗号分隔）", placeholder="例：试驾,价格咨询,落地价")
+
+    # ── 来源专属字段 ────────────────────────────────────────────
+    if sc_source == "抖音关键词搜索":
+        st.caption("ℹ️ 以下为抖音关键词搜索专属参数，当前仅作结构预留，尚未接入真实执行。")
+        dy_keyword = st.text_input("抖音关键词", placeholder="例：途观L 试驾")
+        dy_col1, dy_col2, dy_col3 = st.columns(3)
+        dy_count = dy_col1.number_input("每次拉取条数", min_value=1, max_value=50, value=10, step=1)
+        dy_cursor = dy_col2.number_input("游标", min_value=0, value=0, step=1)
+        dy_comments = dy_col3.checkbox("是否拉取评论", value=False)
+        sc_keywords = ""  # 抖音来源不使用通用关键词，避免双重真相
+    else:
+        sc_keywords = st.text_input("关键词（逗号分隔）", placeholder="例：试驾,价格咨询,落地价")
+
     sc_col1, sc_col2 = st.columns(2)
     sc_mode = sc_col1.selectbox("同步方式", SYNC_MODE_OPTIONS)
     sc_enabled = sc_col2.checkbox("是否启用", value=True)
@@ -225,6 +357,19 @@ with st.form("add_sync_config"):
         if not sc_name:
             st.error("任务名称不能为空")
         else:
+            # Build source_params JSON for Douyin
+            source_params_dict = {}
+            if sc_source == "抖音关键词搜索":
+                if not dy_keyword.strip():
+                    st.error("抖音关键词不能为空")
+                    st.stop()
+                source_params_dict = {
+                    "douyin_keyword": dy_keyword.strip(),
+                    "count": int(dy_count),
+                    "cursor": int(dy_cursor),
+                    "fetch_comments": bool(dy_comments),
+                }
+
             try:
                 payload = {
                     "name": sc_name,
@@ -233,6 +378,7 @@ with st.form("add_sync_config"):
                     "enabled": sc_enabled,
                     "sync_mode": sc_mode,
                     "frequency_desc": sc_freq,
+                    "source_params": json.dumps(source_params_dict, ensure_ascii=False),
                 }
                 r = requests.post(f"{API}/sync-configs/", json=payload, timeout=5)
                 if r.status_code == 200:
@@ -266,7 +412,22 @@ else:
 
             with info_col:
                 st.write(f"**来源：** {cfg.get('source') or '—'}")
-                st.write(f"**关键词：** {cfg.get('keywords') or '—'}")
+
+                # ── 来源专属参数显示 ─────────────────────────────
+                cfg_source = cfg.get('source', '')
+                if cfg_source == "抖音关键词搜索":
+                    try:
+                        sp = json.loads(cfg.get('source_params') or '{}')
+                    except (json.JSONDecodeError, TypeError):
+                        sp = {}
+                    if sp:
+                        st.write(f"**抖音关键词：** {sp.get('douyin_keyword', '—')}")
+                        st.write(f"**每次拉取条数：** {sp.get('count', 10)}")
+                        st.write(f"**游标：** {sp.get('cursor', 0)}")
+                        st.write(f"**是否拉取评论：** {'是' if sp.get('fetch_comments') else '否'}")
+                else:
+                    st.write(f"**关键词：** {cfg.get('keywords') or '—'}")
+
                 st.write(f"**同步方式：** {cfg.get('sync_mode', '—')}")
                 st.write(f"**同步频率说明：** {cfg.get('frequency_desc') or '—'}")
                 st.write(f"**当前状态：** {status_label}（系统维护）")

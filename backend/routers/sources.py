@@ -63,26 +63,17 @@ def import_mock_records(db: Session = Depends(get_db)):
             skipped += 1
             continue
 
-        # Map SourceRecord → Content
-        # summary + author + published_at + raw_text go into notes for now
-        notes_parts = []
-        if record.summary:
-            notes_parts.append(f"摘要：{record.summary}")
-        if record.author:
-            notes_parts.append(f"作者：{record.author}")
-        if record.published_at:
-            notes_parts.append(f"发布时间：{record.published_at}")
-        if record.raw_text:
-            notes_parts.append(f"原文：{record.raw_text[:200]}")
-
         content = Content(
             title=record.title,
             url=record.url,
             platform=record.platform,
+            summary=record.summary,
+            author=record.author,
+            published_at=record.published_at,
+            raw_text=record.raw_text,
             status="new",
             source_name="模拟数据",
             source_label="模拟数据",
-            notes="\n".join(notes_parts),
         )
         db.add(content)
         imported += 1

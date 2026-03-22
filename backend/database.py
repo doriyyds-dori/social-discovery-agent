@@ -27,7 +27,7 @@ def get_db():
 
 def init_db():
     """Create all tables defined by models, then run lightweight migrations."""
-    from backend.models import Keyword, Content, Task, Setting, SyncConfig, SyncLog  # noqa: F401
+    from backend.models import Keyword, Content, Task, Setting, SyncConfig, SyncLog, Personnel, Assignment, LLMConfig, CommentDraft  # noqa: F401
     Base.metadata.create_all(bind=engine)
     _run_migrations()
 
@@ -54,6 +54,9 @@ def _run_migrations():
         if col not in content_cols:
             default = "手工录入" if col == "source_name" else ("手工导入" if col == "source_label" else "")
             cursor.execute(f"ALTER TABLE contents ADD COLUMN {col} TEXT DEFAULT '{default}'")
+    for col in ("summary", "author", "published_at", "raw_text"):
+        if col not in content_cols:
+            cursor.execute(f"ALTER TABLE contents ADD COLUMN {col} TEXT DEFAULT ''")
 
     # ── Fix source label for existing mock records ─────────────────
     cursor.execute(
@@ -66,6 +69,20 @@ def _run_migrations():
     log_cols = {row[1] for row in cursor.fetchall()}
     if "matched_count" not in log_cols:
         cursor.execute("ALTER TABLE sync_logs ADD COLUMN matched_count INTEGER DEFAULT 0")
+
+    # ── sync_configs table ─────────────────────────────────────────
+    cursor.execute("PRAGMA table_info(sync_configs)")
+    sc_cols = {row[1] for row in cursor.fetchall()}
+    if "source_params" not in sc_cols:
+        cursor.execute("ALTER TABLE sync_configs ADD COLUMN source_params TEXT DEFAULT '{}'")
+
+    # ── assignments table ─────────────────────────────────────────
+    cursor.execute("PRAGMA table_info(assignments)")
+    asn_cols = {row[1] for row in cursor.fetchall()}
+    if "draft_pk" not in asn_cols:
+        cursor.execute("ALTER TABLE assignments ADD COLUMN draft_pk INTEGER DEFAULT NULL")
+    if "draft_id_snapshot" not in asn_cols:
+        cursor.execute("ALTER TABLE assignments ADD COLUMN draft_id_snapshot TEXT DEFAULT ''")
 
     conn.commit()
     conn.close()

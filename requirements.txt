@@ -4,3 +4,6 @@ sqlalchemy
 pydantic
 streamlit
 requests
+python-multipart
+openai
+anthropic
